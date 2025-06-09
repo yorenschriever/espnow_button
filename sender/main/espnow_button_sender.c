@@ -13,8 +13,6 @@
 #include "esp_sleep.h"
 #include "esp_log.h"
 #include "driver/rtc_io.h"
-#include "nvs_flash.h"
-#include "nvs.h"
 #include "../../common/espnow.h"
 
 static const char *TAG = "sender";
@@ -62,16 +60,6 @@ unsigned long millis() {
 inline int get_button_status()
 {
     return gpio_get_level(GPIO_NUM_3); // Example GPIO pin, replace with actual button GPIO
-}
-
-void example_nvs_init()
-{
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK( nvs_flash_erase() );
-        ret = nvs_flash_init();
-    }   
-    ESP_ERROR_CHECK( ret );
 }
 
 int debounce(int status)

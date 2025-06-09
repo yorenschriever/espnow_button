@@ -12,6 +12,11 @@
 
 static const char *TAG = "receiver";
 
+static const int MIDI_CHANNEL = 15; // MIDI channel to use, 0-15
+
+#define SUPPORTED_MIDI_NOTES 16
+bool note_status[SUPPORTED_MIDI_NOTES] = {false}; 
+
 // Interface counter
 enum interface_count
 {
@@ -55,14 +60,14 @@ tusb_desc_device_t my_descriptor = {
 
     .bNumConfigurations = 0x01};
 
-static const char *my_string_descriptor[4] = {
+static const char *my_string_descriptor[5] = {
     // tusb_desc_strarray_device_t my_string_descriptor = {
     // array of pointer to string descriptors
     (char[]){0x09, 0x04}, // 0: is supported language is English (0x0409)
     "MULTISCHRIEVER",     // 1: Manufacturer
     "ESP-NOW button",     // 2: Product
     "123456",             // 3: Serials, should use chip ID
-    // "MIDI button device", // 4: MIDI
+    "MIDI button device", // 4: MIDI
 };
 
 /**
@@ -128,6 +133,43 @@ static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const u
     xQueueSend(receive_queue, (void *)&received_queue_message, (TickType_t)0);
 }
 
+void sendMiniNote(uint8_t note, bool on, bool force)
+{
+    if (note >= SUPPORTED_MIDI_NOTES)
+    {
+        ESP_LOGE(TAG, "Note %d is out of range (0-%d)", note, SUPPORTED_MIDI_NOTES - 1);
+        return;
+    }
+
+    if (note_status[note] == on && !force)
+    {
+        ESP_LOGI(TAG, "Note %d already in state %s", note, on ? "on" : "off");
+        return; // No change needed
+    }
+    note_status[note] = on; // Update the note status
+
+    if (on)
+    {
+        ESP_LOGI(TAG, "Note %d on", note);
+        uint8_t note_on[3] = {NOTE_ON + MIDI_CHANNEL, note, 127};
+        tud_midi_stream_write(0, note_on, sizeof(note_on));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Note %d off", note);
+        uint8_t note_off[3] = {NOTE_OFF + MIDI_CHANNEL, note, 0};
+        tud_midi_stream_write(0, note_off, sizeof(note_off));
+    }    
+}
+
+void initMidi(){
+    for (int i=0; i<SUPPORTED_MIDI_NOTES; i++)
+    {
+        // Send a Note Off for all notes to ensure no stuck notes
+        sendMiniNote(i, note_status[i], true);
+    }
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "USB initialization");
@@ -141,8 +183,6 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
-    ESP_LOGI(TAG, "USB initialization DONE");
-
     ESP_LOGI(TAG, "Creating receive queue");
     receive_queue = xQueueCreate(RECEIVE_QUEUE_SIZE, sizeof(received_queue_message));
     if (receive_queue == NULL)
@@ -151,21 +191,12 @@ void app_main(void)
         return;
     }
 
-    // Read recieved MIDI packets
+    // Read received MIDI packets
     ESP_LOGI(TAG, "MIDI read task init");
     xTaskCreate(midi_task_read_example, "midi_task_read_example", 2 * 1024, NULL, 5, NULL);
 
     // ESP NOW initialization
-    ESP_LOGI(TAG, "ESP NOW initialization");
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
+    example_nvs_init();
     example_wifi_init();
     example_espnow_init(NULL, example_espnow_recv_cb);
 
@@ -177,27 +208,10 @@ void app_main(void)
         {
             int button = handled_queue_message.payload.button_id;
             int state = handled_queue_message.payload.status;
-            // Process the received message
+            
             ESP_LOGI(TAG, "Received button %d state %d: ", button, state);
 
-            // Here you can add code to handle the button press/release
-            // For example, send a MIDI message based on the button state
-            if (state == 1)
-            {
-                // Button pressed
-                ESP_LOGI(TAG, "Button %d pressed", button);
-                // Send MIDI Note On message
-                uint8_t note_on[3] = {NOTE_ON, button, 127};
-                tud_midi_stream_write(0, note_on, sizeof(note_on));
-            }
-            else
-            {
-                // Button released
-                ESP_LOGI(TAG, "Button %d released", button);
-                // Send MIDI Note Off message
-                uint8_t note_off[3] = {NOTE_OFF, button, 0};
-                tud_midi_stream_write(0, note_off, sizeof(note_off));
-            }
+            sendMiniNote(button, state, false);
 
             Payload ack_payload;
             ack_payload.type = TYPE_ACK;

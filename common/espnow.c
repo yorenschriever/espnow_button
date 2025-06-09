@@ -5,11 +5,23 @@
 #include <time.h>
 #include <string.h>
 #include <assert.h>
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "espnow.h"
 
 static const char *TAG = "espnow";
 
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+
+void example_nvs_init(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        ret = nvs_flash_init();
+    }   
+    ESP_ERROR_CHECK( ret );
+}
 
 void example_wifi_init(void)
 {
