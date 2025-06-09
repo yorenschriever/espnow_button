@@ -33,7 +33,6 @@ esp_err_t example_espnow_init(esp_now_send_cb_t send_cb, esp_now_recv_cb_t recv_
     if (send_cb != NULL) ESP_ERROR_CHECK( esp_now_register_send_cb(send_cb) );
     if (recv_cb != NULL) ESP_ERROR_CHECK( esp_now_register_recv_cb(recv_cb) );
 
-    //TODO remove?
 #if CONFIG_ESPNOW_ENABLE_POWER_SAVE
     ESP_ERROR_CHECK( esp_now_set_wake_window(CONFIG_ESPNOW_WAKE_WINDOW) );
     ESP_ERROR_CHECK( esp_wifi_connectionless_module_set_wake_interval(CONFIG_ESPNOW_WAKE_INTERVAL) );
@@ -46,7 +45,6 @@ esp_err_t example_espnow_init(esp_now_send_cb_t send_cb, esp_now_recv_cb_t recv_
     esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
     if (peer == NULL) {
         ESP_LOGE(TAG, "Malloc peer information fail");
-        // vSemaphoreDelete(s_example_espnow_queue);
         esp_now_deinit();
         return ESP_FAIL;
     }
@@ -69,8 +67,8 @@ esp_err_t espnow_broadcast(uint8_t *buffer, int len)
 void example_espnow_deinit(void)
 {
     ESP_ERROR_CHECK( esp_now_deinit() );
-    ESP_ERROR_CHECK( esp_wifi_stop() );
-    ESP_ERROR_CHECK( esp_wifi_deinit() );
-    ESP_ERROR_CHECK( esp_event_loop_delete_default() );
+    // ESP_ERROR_CHECK( esp_wifi_stop() );
+    // ESP_ERROR_CHECK( esp_wifi_deinit() );
+    // ESP_ERROR_CHECK( esp_event_loop_delete_default() );
     ESP_LOGI(TAG, "ESP-NOW deinitialized");
 }

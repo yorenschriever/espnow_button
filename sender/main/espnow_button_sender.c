@@ -103,9 +103,10 @@ void app_main(void)
 
     example_deep_sleep_register_ext0_wakeup(get_button_status() ? 0 : 1);
 
-    example_espnow_deinit();
-    vTaskDelay(5 / portTICK_PERIOD_MS); // Allow time for deinit
+    // example_espnow_deinit();
+    // vTaskDelay(5 / portTICK_PERIOD_MS); // Allow time for deinit
 
     printf("Entering deep sleep...\n");
+    rtc_gpio_isolate(GPIO_NUM_12);
     esp_deep_sleep_start();
 }
