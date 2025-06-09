@@ -67,7 +67,7 @@ esp_err_t espnow_broadcast(uint8_t *buffer, int len)
 void example_espnow_deinit(void)
 {
     ESP_ERROR_CHECK( esp_now_deinit() );
-    // ESP_ERROR_CHECK( esp_wifi_stop() );
+    ESP_ERROR_CHECK( esp_wifi_stop() );
     // ESP_ERROR_CHECK( esp_wifi_deinit() );
     // ESP_ERROR_CHECK( esp_event_loop_delete_default() );
     ESP_LOGI(TAG, "ESP-NOW deinitialized");

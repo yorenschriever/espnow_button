@@ -88,20 +88,24 @@ int debounce(int status)
 
 void send_button_status(int status)
 {
-    needs_ack_from++;
-    printf("sending status, id = %d\n", needs_ack_from);
-    // uint8_t payload[3] = {0x01, status, needs_ack_from}; 
-
     Payload payload;
     payload.type = TYPE_STATUS_UPDATE;
     payload.button_id = BUTTON_ID; 
     payload.status = status; // 0 for released, 1 for pressed
-    payload.msg_id = needs_ack_from; // ID of the sender, used for acknowledgment
+    payload.msg_id = ++needs_ack_from; // ID of the sender, used for acknowledgment
 
     if (espnow_broadcast((uint8_t*)&payload, sizeof(payload)) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
     }
     got_ack = false;
+}
+
+static void deep_sleep_task(void *args)
+{
+    vTaskDelay(10 / portTICK_PERIOD_MS); // Allow some time for the last message to be sent
+    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_3, get_button_status() ? 0 : 1));
+    esp_deep_sleep_start();
+    vTaskDelete(NULL); 
 }
 
 void app_main(void)
@@ -125,10 +129,17 @@ void app_main(void)
     int attempts = 0;
     do {
         status = get_button_status();
+        // Immediately send the current status for a snappy response
         send_button_status(status);
+        // Then wait for the button to be stable for 100ms. 
         new_status = debounce(status);
     } while (
         (   
+            // After we got a stable button signal,
+            // we check if it still corresponds to the last message we sent out
+            // and if we meanwhile have received an acknowledgment.
+            // If not, we do the entire thing over again, but limit the total attempts
+            // to avoid draining the battery when the host is not turned on.
             status != new_status ||
             !got_ack
         ) &&
@@ -137,8 +148,16 @@ void app_main(void)
 
     printf("Send done, time taken: %lu ms\n", millis() - start);
 
+    // example_espnow_deinit();
+    // vTaskDelay(100 / portTICK_PERIOD_MS);
+
     printf("Entering deep sleep\n");
 
-    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_3, get_button_status() ? 0 : 1));
-    esp_deep_sleep_start();
+    // Putting the sleep call in another thread avoids getting the following error:
+    // E (???) sleep: Deep sleep request is rejected
+    // I dont understand why a normal vTaskDelay call would not give enough 
+    // time for the other processes to finish, but this works.
+    xTaskCreate(deep_sleep_task, "deep_sleep_task", 4096, NULL, 6, NULL);
+
+    
 }
