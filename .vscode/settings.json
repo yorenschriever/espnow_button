@@ -1,0 +1,4 @@
+{
+    "cmake.sourceDirectory": "/Users/yoren/repos/espnow_button/sender",
+    "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/bin/python3"
+}
