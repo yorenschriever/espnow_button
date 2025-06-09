@@ -19,46 +19,38 @@
 
 static const char *TAG = "sender";
 
-volatile bool send_done = false;
+static const int BUTTON_ID = 1;
 
-const int ext_wakeup_pin_0 = 3;
-void example_deep_sleep_register_ext0_wakeup(int level)
+static volatile RTC_DATA_ATTR bool got_ack = false;
+static volatile RTC_DATA_ATTR int needs_ack_from = 0;
+
+static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
-    printf("Enabling EXT0 wakeup on pin GPIO%d\n", ext_wakeup_pin_0);
-    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(ext_wakeup_pin_0, level));
-
-    // Configure pullup/downs via RTCIO to tie wakeup pins to inactive level during deepsleep.
-    // EXT0 resides in the same power domain (RTC_PERIPH) as the RTC IO pullup/downs.
-    // No need to keep that power domain explicitly, unlike EXT1.
-    ESP_ERROR_CHECK(rtc_gpio_pullup_dis(ext_wakeup_pin_0));
-    ESP_ERROR_CHECK(rtc_gpio_pulldown_en(ext_wakeup_pin_0));
-}
-
-/* ESPNOW sending or receiving callback function is called in WiFi task.
- * Users should not do lengthy operations from this task. Instead, post
- * necessary data to a queue and handle it from a lower priority task. */
-static void example_espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
-{
-    send_done = true;
-
-    printf("Send cb, mac: " MACSTR ", status: %d\n", MAC2STR(mac_addr), status);
-
-    if (mac_addr == NULL) {
-        ESP_LOGE(TAG, "Send cb arg error");
+    uint8_t *mac_addr = recv_info->src_addr;
+    if (mac_addr == NULL || data == NULL || len <= 0)
+    {
+        ESP_LOGE(TAG, "Receive cb arg error");
         return;
     }
 
-    // evt.id = EXAMPLE_ESPNOW_SEND_CB;
-    // memcpy(send_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
-    // send_cb->status = status;
-    // if (xQueueSend(s_example_espnow_queue, &evt, ESPNOW_MAXDELAY) != pdTRUE) {
-    //     ESP_LOGW(TAG, "Send send queue fail");
-    // }
-    // espnow_queue_event(&evt);
+    Payload * payload = (Payload *)data;
 
-    // if (espnow_queue_event(&evt) != pdTRUE) {
-    //     ESP_LOGW(TAG, "Send send queue fail");
-    // }
+    if (payload->type != TYPE_ACK) {
+        ESP_LOGW(TAG, "Received non-acknowledgment message, type: %d", payload->type);
+        return;
+    }
+    if (payload->msg_id != needs_ack_from) {
+        ESP_LOGW(TAG, "Received acknowledgment for unexpected message ID: %d, expected: %d", payload->msg_id, needs_ack_from);
+        return;
+    }
+    if (payload->button_id != BUTTON_ID) {
+        ESP_LOGW(TAG, "Received acknowledgment for unexpected button ID: %d, expected: %d", payload->button_id, BUTTON_ID);
+        return;
+    }
+    got_ack = true;
+
+    printf("GOT ACK \n");
+
 }
 
 unsigned long millis() {
@@ -67,9 +59,49 @@ unsigned long millis() {
 	return (tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL));
 }
 
-int get_button_status()
+inline int get_button_status()
 {
     return gpio_get_level(GPIO_NUM_3); // Example GPIO pin, replace with actual button GPIO
+}
+
+void example_nvs_init()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        ret = nvs_flash_init();
+    }   
+    ESP_ERROR_CHECK( ret );
+}
+
+int debounce(int status)
+{
+    for(int i=0; i<10; i++) {
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+        if (status != get_button_status()) {
+            status = get_button_status();
+            i=0;
+        }
+    }
+    return status;
+}
+
+void send_button_status(int status)
+{
+    needs_ack_from++;
+    printf("sending status, id = %d\n", needs_ack_from);
+    // uint8_t payload[3] = {0x01, status, needs_ack_from}; 
+
+    Payload payload;
+    payload.type = TYPE_STATUS_UPDATE;
+    payload.button_id = BUTTON_ID; 
+    payload.status = status; // 0 for released, 1 for pressed
+    payload.msg_id = needs_ack_from; // ID of the sender, used for acknowledgment
+
+    if (espnow_broadcast((uint8_t*)&payload, sizeof(payload)) != ESP_OK) {
+        ESP_LOGE(TAG, "Send error");
+    }
+    got_ack = false;
 }
 
 void app_main(void)
@@ -77,36 +109,36 @@ void app_main(void)
     unsigned long start = millis();
     printf("Deep sleep example\n");
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK( nvs_flash_erase() );
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( ret );
-
+    ESP_ERROR_CHECK(gpio_set_direction(GPIO_NUM_3, GPIO_MODE_INPUT));
+    ESP_ERROR_CHECK(rtc_gpio_pullup_dis(GPIO_NUM_3));
+    ESP_ERROR_CHECK(rtc_gpio_pulldown_en(GPIO_NUM_3));
+    
+    example_nvs_init();
     example_wifi_init();
-    example_espnow_init(example_espnow_send_cb, NULL);
-
-    uint8_t payload[2] = {0x01, get_button_status() ? 0x01 : 0x00}; 
-    if (espnow_broadcast(payload, sizeof(payload)) != ESP_OK) {
-        ESP_LOGE(TAG, "Send error");
-        vTaskDelete(NULL);
-    }
+    example_espnow_init(NULL, example_espnow_recv_cb);
 
     printf("Send start, time taken: %lu ms\n", millis() - start);
 
-    while(!send_done) {
-        vTaskDelay(1 / portTICK_PERIOD_MS);
-    }
+    int status;
+    int new_status;
+    const int max_attempts = 5;
+    int attempts = 0;
+    do {
+        status = get_button_status();
+        send_button_status(status);
+        new_status = debounce(status);
+    } while (
+        (   
+            status != new_status ||
+            !got_ack
+        ) &&
+        ++attempts < max_attempts
+    );
 
     printf("Send done, time taken: %lu ms\n", millis() - start);
 
-    example_deep_sleep_register_ext0_wakeup(get_button_status() ? 0 : 1);
+    printf("Entering deep sleep\n");
 
-    // example_espnow_deinit();
-    // vTaskDelay(5 / portTICK_PERIOD_MS); // Allow time for deinit
-
-    printf("Entering deep sleep...\n");
-    rtc_gpio_isolate(GPIO_NUM_12);
+    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_3, get_button_status() ? 0 : 1));
     esp_deep_sleep_start();
 }

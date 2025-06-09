@@ -63,8 +63,7 @@ static const uint8_t s_midi_cfg_desc[] = {
 struct ReceiveQueueMessage
 {
     char mac[ESP_NOW_ETH_ALEN];
-    uint8_t button;
-    uint8_t state; // 0 = released, 1 = pressed
+    Payload payload; 
 } received_queue_message, handled_queue_message;
 
 static QueueHandle_t receive_queue;
@@ -98,8 +97,6 @@ static void midi_task_read_example(void *arg)
 
 static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
-    // example_espnow_event_t evt;
-    // example_espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
     uint8_t *mac_addr = recv_info->src_addr;
 
     if (mac_addr == NULL || data == NULL || len <= 0)
@@ -108,11 +105,8 @@ static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const u
         return;
     }
 
-    ESP_LOGI(TAG, "Received data, len: %d. Button %d is %d", len, data[0], data[1]);
-
-    received_queue_message.button = data[0];
-    received_queue_message.state = data[1];
     memcpy(received_queue_message.mac, mac_addr, ESP_NOW_ETH_ALEN);
+    memcpy(&received_queue_message.payload, data, sizeof(Payload));
     xQueueSend(receive_queue, (void *)&received_queue_message, (TickType_t)0);
 
 }
@@ -164,27 +158,36 @@ void app_main(void)
     {
         if (xQueueReceive (receive_queue, (void *)&handled_queue_message, 100))
         {
+            int button = handled_queue_message.payload.button_id;
+            int state = handled_queue_message.payload.status;
             // Process the received message
-            ESP_LOGI(TAG, "Received button %d state %d: ", handled_queue_message.button, handled_queue_message.state);
+            ESP_LOGI(TAG, "Received button %d state %d: ", button, state);
 
             // Here you can add code to handle the button press/release
             // For example, send a MIDI message based on the button state
-            if (handled_queue_message.state == 1)
+            if (state == 1)
             {
                 // Button pressed
-                ESP_LOGI(TAG, "Button %d pressed", handled_queue_message.button);
+                ESP_LOGI(TAG, "Button %d pressed", button);
                 // Send MIDI Note On message
-                uint8_t note_on[3] = {NOTE_ON, handled_queue_message.button, 127};
+                uint8_t note_on[3] = {NOTE_ON, button, 127};
                 tud_midi_stream_write(0, note_on, sizeof(note_on));
             }
             else
             {
                 // Button released
-                ESP_LOGI(TAG, "Button %d released", handled_queue_message.button);
+                ESP_LOGI(TAG, "Button %d released", button);
                 // Send MIDI Note Off message
-                uint8_t note_off[3] = {NOTE_OFF, handled_queue_message.button, 0};
+                uint8_t note_off[3] = {NOTE_OFF, button, 0};
                 tud_midi_stream_write(0, note_off, sizeof(note_off));
             }
+
+            Payload ack_payload;
+            ack_payload.type = TYPE_ACK;
+            ack_payload.button_id = button;
+            ack_payload.status = state;
+            ack_payload.msg_id = handled_queue_message.payload.msg_id; // Use the same msg_id for acknowledgment
+            espnow_broadcast((uint8_t *)&ack_payload, sizeof(ack_payload));
         }
     }
 }
