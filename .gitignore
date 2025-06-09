@@ -2,6 +2,6 @@ build
 managed_components
 
 .ds_store
-# .vs_code
+.vs_code
 
 sdkconfig.old
