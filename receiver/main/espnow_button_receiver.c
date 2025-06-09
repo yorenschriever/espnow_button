@@ -10,8 +10,7 @@
 
 #include "../../common/espnow.h"
 
-//TODO
-static const char *TAG = "example";
+static const char *TAG = "receiver";
 
 // Interface counter
 enum interface_count

@@ -17,7 +17,7 @@
 #include "nvs.h"
 #include "../../common/espnow.h"
 
-static const char *TAG = "sender_deep_sleep_example";
+static const char *TAG = "sender";
 
 volatile bool send_done = false;
 
@@ -102,6 +102,9 @@ void app_main(void)
     printf("Send done, time taken: %lu ms\n", millis() - start);
 
     example_deep_sleep_register_ext0_wakeup(get_button_status() ? 0 : 1);
+
+    example_espnow_deinit();
+    vTaskDelay(5 / portTICK_PERIOD_MS); // Allow time for deinit
 
     printf("Entering deep sleep...\n");
     esp_deep_sleep_start();
