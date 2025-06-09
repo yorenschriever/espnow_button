@@ -2,11 +2,11 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "tinyusb.h"
 #include <stdbool.h>
 #include <stdlib.h>
-#include "nvs.h"
-#include "nvs_flash.h"
 
 #include "../../common/espnow.h"
 
@@ -38,11 +38,29 @@ enum usb_endpoints
 /**
  * @brief String descriptor
  */
-static const char *s_str_desc[5] = {
+tusb_desc_device_t my_descriptor = {
+    .bLength = sizeof(my_descriptor),
+    .bDescriptorType = TUSB_DESC_DEVICE,
+    .bcdUSB = 0x0200, // USB version. 0x0200 means version 2.0
+    .bDeviceClass = TUSB_CLASS_UNSPECIFIED,
+    .bMaxPacketSize0 = 64,
+
+    .idVendor = 0x303A,
+    .idProduct = 0x3000,
+    .bcdDevice = 0x0101, // Device FW version
+
+    .iManufacturer = 0x01, // see string_descriptor[1] bellow
+    .iProduct = 0x02,      // see string_descriptor[2] bellow
+    .iSerialNumber = 0x03, // see string_descriptor[3] bellow
+
+    .bNumConfigurations = 0x01};
+
+static const char *my_string_descriptor[4] = {
+    // tusb_desc_strarray_device_t my_string_descriptor = {
     // array of pointer to string descriptors
     (char[]){0x09, 0x04}, // 0: is supported language is English (0x0409)
     "MULTISCHRIEVER",     // 1: Manufacturer
-    "Midi button",        // 2: Product
+    "ESP-NOW button",     // 2: Product
     "123456",             // 3: Serials, should use chip ID
     // "MIDI button device", // 4: MIDI
 };
@@ -63,7 +81,7 @@ static const uint8_t s_midi_cfg_desc[] = {
 struct ReceiveQueueMessage
 {
     char mac[ESP_NOW_ETH_ALEN];
-    Payload payload; 
+    Payload payload;
 } received_queue_message, handled_queue_message;
 
 static QueueHandle_t receive_queue;
@@ -84,7 +102,7 @@ static void midi_task_read_example(void *arg)
             read = tud_midi_packet_read(packet);
             if (read)
             {
-                ESP_LOGI(TAG, "Read - Time (ms since boot): %lld, Data: %02hhX %02hhX %02hhX %02hhX",
+                ESP_LOGI(TAG, "MIDI Read - Time (ms since boot): %lld, Data: %02hhX %02hhX %02hhX %02hhX",
                          esp_timer_get_time(), packet[0], packet[1], packet[2], packet[3]);
             }
         }
@@ -108,7 +126,6 @@ static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const u
     memcpy(received_queue_message.mac, mac_addr, ESP_NOW_ETH_ALEN);
     memcpy(&received_queue_message.payload, data, sizeof(Payload));
     xQueueSend(receive_queue, (void *)&received_queue_message, (TickType_t)0);
-
 }
 
 void app_main(void)
@@ -116,9 +133,9 @@ void app_main(void)
     ESP_LOGI(TAG, "USB initialization");
 
     tinyusb_config_t const tusb_cfg = {
-        .device_descriptor = NULL, // If device_descriptor is NULL, tinyusb_driver_install() will use Kconfig
-        .string_descriptor = s_str_desc,
-        .string_descriptor_count = sizeof(s_str_desc) / sizeof(s_str_desc[0]),
+        .descriptor = &my_descriptor,
+        .string_descriptor = my_string_descriptor,
+        .string_descriptor_count = sizeof(my_string_descriptor) / sizeof(my_string_descriptor[0]),
         .external_phy = false,
         .configuration_descriptor = s_midi_cfg_desc,
     };
@@ -156,7 +173,7 @@ void app_main(void)
 
     while (true)
     {
-        if (xQueueReceive (receive_queue, (void *)&handled_queue_message, 100))
+        if (xQueueReceive(receive_queue, (void *)&handled_queue_message, 100))
         {
             int button = handled_queue_message.payload.button_id;
             int state = handled_queue_message.payload.status;

@@ -3,5 +3,6 @@ managed_components
 
 .ds_store
 .vs_code
+.vscode
 
 sdkconfig.old
