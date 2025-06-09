@@ -1,4 +1,4 @@
 idf_component_register(
-    SRCS "tusb_midi_main.c" "../../common/espnow.c"
+    SRCS "espnow_button_receiver.c" "../../common/espnow.c"
     INCLUDE_DIRS "."
 )
