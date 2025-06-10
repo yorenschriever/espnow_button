@@ -156,7 +156,7 @@ void setup_led()
 
 void blinkLed(uint8_t color[3], uint8_t duration_ms)
 {
-    ESP_ERROR_CHECK(rmt_transmit(led_chan, led_encoder, color, sizeof(color), &tx_config));
+    ESP_ERROR_CHECK(rmt_transmit(led_chan, led_encoder, color, sizeof(blink_off), &tx_config));
     ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
     vTaskDelay(pdMS_TO_TICKS(duration_ms));
     ESP_ERROR_CHECK(rmt_transmit(led_chan, led_encoder, blink_off, sizeof(blink_off), &tx_config));
