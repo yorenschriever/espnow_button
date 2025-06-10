@@ -1,3 +1,5 @@
+#include "driver/gpio.h"
+#include "driver/rmt_tx.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -9,13 +11,16 @@
 #include <stdlib.h>
 
 #include "../../common/espnow.h"
+#include "led_strip_encoder.h"
 
 static const char *TAG = "receiver";
+
+static const int LED_PIN = 48; // GPIO pin for the LED
 
 static const int MIDI_CHANNEL = 15; // MIDI channel to use, 0-15
 
 #define SUPPORTED_MIDI_NOTES 16
-bool note_status[SUPPORTED_MIDI_NOTES] = {false}; 
+bool note_status[SUPPORTED_MIDI_NOTES] = {false};
 
 // Interface counter
 enum interface_count
@@ -118,6 +123,46 @@ static void midi_task_read_example(void *arg)
 #define NOTE_OFF 0x80
 #define NOTE_ON 0x90
 
+rmt_channel_handle_t led_chan = NULL;
+rmt_encoder_handle_t led_encoder = NULL;
+static uint8_t blink_off[3] = {0, 0, 0};
+rmt_transmit_config_t tx_config = {
+    .loop_count = 0, // no transfer loop
+};
+
+void setup_led()
+{
+    ESP_LOGI(TAG, "Create RMT TX channel");
+
+    rmt_tx_channel_config_t tx_chan_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
+        .gpio_num = LED_PIN,
+        .mem_block_symbols = 64, // increase the block size can make the LED less flickering
+        .resolution_hz = 10000000,
+        .trans_queue_depth = 4, // set the number of transactions that can be pending in the background
+    };
+    ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
+
+    ESP_LOGI(TAG, "Install led strip encoder");
+
+    led_strip_encoder_config_t encoder_config = {
+        .resolution = 10000000,
+    };
+    ESP_ERROR_CHECK(rmt_new_led_strip_encoder(&encoder_config, &led_encoder));
+
+    ESP_LOGI(TAG, "Enable RMT TX channel");
+    ESP_ERROR_CHECK(rmt_enable(led_chan));
+}
+
+void blinkLed(uint8_t color[3], uint8_t duration_ms)
+{
+    ESP_ERROR_CHECK(rmt_transmit(led_chan, led_encoder, color, sizeof(color), &tx_config));
+    ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
+    vTaskDelay(pdMS_TO_TICKS(duration_ms));
+    ESP_ERROR_CHECK(rmt_transmit(led_chan, led_encoder, blink_off, sizeof(blink_off), &tx_config));
+    ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
+}
+
 static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
     uint8_t *mac_addr = recv_info->src_addr;
@@ -159,11 +204,12 @@ void sendMiniNote(uint8_t note, bool on, bool force)
         ESP_LOGI(TAG, "Note %d off", note);
         uint8_t note_off[3] = {NOTE_OFF + MIDI_CHANNEL, note, 0};
         tud_midi_stream_write(0, note_off, sizeof(note_off));
-    }    
+    }
 }
 
-void initMidi(){
-    for (int i=0; i<SUPPORTED_MIDI_NOTES; i++)
+void initMidi()
+{
+    for (int i = 0; i < SUPPORTED_MIDI_NOTES; i++)
     {
         // Send a Note Off for all notes to ensure no stuck notes
         sendMiniNote(i, note_status[i], true);
@@ -172,6 +218,7 @@ void initMidi(){
 
 void app_main(void)
 {
+    setup_led();
     ESP_LOGI(TAG, "USB initialization");
 
     tinyusb_config_t const tusb_cfg = {
@@ -202,13 +249,15 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Reading queue");
 
+    blinkLed((uint8_t[]){255, 0, 0}, 250); // Blink green LED to indicate startup
+
     while (true)
     {
         if (xQueueReceive(receive_queue, (void *)&handled_queue_message, 100))
         {
             int button = handled_queue_message.payload.button_id;
             int state = handled_queue_message.payload.status;
-            
+
             ESP_LOGI(TAG, "Received button %d state %d: ", button, state);
 
             sendMiniNote(button, state, false);
@@ -219,6 +268,8 @@ void app_main(void)
             ack_payload.status = state;
             ack_payload.msg_id = handled_queue_message.payload.msg_id; // Use the same msg_id for acknowledgment
             espnow_broadcast((uint8_t *)&ack_payload, sizeof(ack_payload));
+
+            blinkLed((uint8_t[]){0, 0, 255}, 10); // Blink the LED to indicate a message was received
         }
     }
 }
