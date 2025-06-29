@@ -15,7 +15,8 @@
 
 static const char *TAG = "receiver";
 
-static const int LED_PIN = 48; // GPIO pin for the LED
+// static const int LED_PIN = 48; // GPIO pin for the LED on esp32-s3-devkit-c
+static const int LED_PIN = 21; // GPIO pin for the LED on esp32-s3-zero
 
 static const int MIDI_CHANNEL = 15; // MIDI channel to use, 0-15
 
