@@ -19,8 +19,8 @@ static const char *TAG = "sender";
 
 static const int BUTTON_ID = 1;
 
-static volatile RTC_DATA_ATTR bool got_ack = false;
-static volatile RTC_DATA_ATTR int needs_ack_from = 0;
+static volatile bool got_ack = false;
+static volatile int needs_ack_from = 0;
 
 static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
@@ -115,12 +115,18 @@ void app_main(void)
     int new_status;
     const int max_attempts = 5;
     int attempts = 0;
+    bool stable = false;
     do {
         status = get_button_status();
         // Immediately send the current status for a snappy response
         send_button_status(status);
         // Then wait for the button to be stable for 100ms. 
         new_status = debounce(status);
+
+        stable = new_status == status;
+        if (!stable){
+            attempts=0;
+        }
     } while (
         (   
             // After we got a stable button signal,
@@ -128,7 +134,7 @@ void app_main(void)
             // and if we meanwhile have received an acknowledgment.
             // If not, we do the entire thing over again, but limit the total attempts
             // to avoid draining the battery when the host is not turned on.
-            status != new_status ||
+            !stable ||
             !got_ack
         ) &&
         ++attempts < max_attempts
