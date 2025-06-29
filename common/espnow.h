@@ -8,8 +8,9 @@
 #include "esp_mac.h"
 #include "esp_now.h"
 
+#include "pmk.h"
+
 #define CONFIG_ESPNOW_CHANNEL 1
-#define CONFIG_ESPNOW_PMK "1234567890123456" // 16 bytes primary master key
 
 #define CONFIG_ESPNOW_ENABLE_POWER_SAVE 0
 #define CONFIG_ESPNOW_WAKE_WINDOW 1000
@@ -30,8 +31,16 @@ typedef struct Payload {
     uint8_t msg_id; // ID of the sender, used for acknowledgment
 } Payload;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void example_nvs_init(void);
 void example_wifi_init(void);
 esp_err_t example_espnow_init(esp_now_send_cb_t send_cb, esp_now_recv_cb_t recv_cb);
 esp_err_t espnow_broadcast(uint8_t *buffer, int len);
 void example_espnow_deinit(void);
+
+#ifdef __cplusplus
+}
+#endif

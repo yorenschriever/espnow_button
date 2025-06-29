@@ -6,6 +6,13 @@ The other part is a receiver that acts as a midi usb device that emits the butto
 Both - sender and receiver - can be programmed over the otg port. Before programming you need to connect the port bootloader by holding down BOOT and then pressing reset. 
 The sender is likely in deep sleep otherwise, and wont listen for your flash command. The receiver is acting a midi device and also wont listen.
 
+# Primary master key
+
+Add a file named `common/pmk.h` with a 16 byte master key, like this:
+```
+#define CONFIG_ESPNOW_PMK "F9x5WYR^VByLPyA5" 
+```
+
 # Hardware
 I used esp32-s3-zero modules this project. 
 

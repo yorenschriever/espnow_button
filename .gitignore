@@ -5,6 +5,8 @@ managed_components
 .vs_code
 .vscode
 
+pmk.h
+
 sdkconfig.old
 
 .component_hash
