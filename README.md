@@ -23,3 +23,10 @@ Also make sure to remove the WS2812B led from the module. It consumes the most p
 The 3v3 pin can be directly connected to a LiFePo4 battery (with a BMS in between). No step down module required.
 
 For testing i used the ESP32-S3-DevKitC, because uart USB connector would remain connected to the log output, even when the receiver is in USB host mode, or the sender is in deep sleep mode.
+
+## vapes
+For the vapes i used the esp32s3 super mini.
+This one is more power efficient. it also comes with built-in charger. to increase the charging current from 100mA to 300mA, connect the boost jumper on the back (close to the batt solder pads)
+
+Remove the RGB led and also a resistor est to the tx pin
+also i soldered a 32cm wire to the pcb antenna (board edge side) to improve the range

@@ -12,15 +12,18 @@
 #include "freertos/task.h"
 #include "esp_sleep.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "../../common/espnow.h"
 
 static const char *TAG = "sender";
 
-static const int BUTTON_ID = 1;
+static const int BUTTON_ID = 9;
 
 static volatile bool got_ack = false;
 static volatile int needs_ack_from = 0;
+
+static volatile bool last_confirmed_status = false;
 
 static void example_espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len)
 {
@@ -74,6 +77,11 @@ int debounce(int status)
     return status;
 }
 
+int get_random_delay_ms()
+{
+    return esp_random() & 0xff;
+}
+
 void send_button_status(int status)
 {
     Payload payload;
@@ -90,8 +98,19 @@ void send_button_status(int status)
 
 static void deep_sleep_task(void *args)
 {
-    vTaskDelay(10 / portTICK_PERIOD_MS); // Allow some time for the last message to be sent
-    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(GPIO_NUM_3, get_button_status() ? 0 : 1));
+    // vTaskDelay(10 / portTICK_PERIOD_MS); // Allow some time for the last message to be sent
+    example_espnow_deinit();
+
+    // Isolate digital GPIO pins during deep sleep to prevent current leakage
+    esp_sleep_config_gpio_isolate();
+
+    // Reset USB pins (GPIO 19 and 20) to disable internal USB PHY pullups
+    gpio_reset_pin(GPIO_NUM_19);
+    gpio_reset_pin(GPIO_NUM_20);
+
+    const uint64_t ext1_pin_mask = 1ULL << GPIO_NUM_3;
+    esp_sleep_ext1_wakeup_mode_t mode = get_button_status() ? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH;
+    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(ext1_pin_mask, mode));
     esp_deep_sleep_start();
     vTaskDelete(NULL); 
 }
@@ -100,13 +119,17 @@ void app_main(void)
 {
     unsigned long start = millis();
     printf("Deep sleep example\n");
-
+    
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_NUM_3, GPIO_MODE_INPUT));
     ESP_ERROR_CHECK(rtc_gpio_pullup_dis(GPIO_NUM_3));
     ESP_ERROR_CHECK(rtc_gpio_pulldown_en(GPIO_NUM_3));
     
     example_nvs_init();
     example_wifi_init();
+
+    // Set maximum WiFi transmit power to 8 dBm (32 * 0.25 dBm = 8 dBm)
+    ESP_ERROR_CHECK( esp_wifi_set_max_tx_power(34) );
+
     example_espnow_init(NULL, example_espnow_recv_cb);
 
     printf("Send start, time taken: %lu ms\n", millis() - start);
@@ -127,6 +150,8 @@ void app_main(void)
         if (!stable){
             attempts=0;
         }
+
+        // vTaskDelay(get_random_delay_ms() / portTICK_PERIOD_MS); // Random delay to avoid collisions
     } while (
         (   
             // After we got a stable button signal,
@@ -139,6 +164,7 @@ void app_main(void)
         ) &&
         ++attempts < max_attempts
     );
+    last_confirmed_status = status;
 
     printf("Send done, time taken: %lu ms\n", millis() - start);
 
